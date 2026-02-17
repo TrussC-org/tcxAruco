@@ -1,0 +1,18 @@
+{
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "clangd.arguments": [
+    "--compile-commands-dir=${workspaceFolder}/build-macos"
+  ],
+  "cmake.buildBeforeRun": true,
+  "cmake.buildDirectory": "${workspaceFolder}/build-macos",
+  "cmake.buildPreset": "macos",
+  "cmake.configureOnOpen": true,
+  "cmake.configurePreset": "macos",
+  "cmake.options.advanced": {
+    "launch": {
+      "statusBarVisibility": "hidden"
+    }
+  },
+  "cmake.sourceDirectory": "${workspaceFolder}",
+  "cmake.useCMakePresets": "always"
+}

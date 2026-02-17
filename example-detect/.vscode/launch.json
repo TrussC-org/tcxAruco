@@ -1,0 +1,22 @@
+{
+  "configurations": [
+    {
+      "cwd": "${workspaceFolder}",
+      "linux": {
+        "program": "${workspaceFolder}/bin/${workspaceFolderBasename}"
+      },
+      "name": "Debug",
+      "osx": {
+        "program": "${workspaceFolder}/bin/${workspaceFolderBasename}.app/Contents/MacOS/${workspaceFolderBasename}"
+      },
+      "preLaunchTask": "CMake: build",
+      "request": "launch",
+      "type": "lldb",
+      "windows": {
+        "program": "${workspaceFolder}/bin/${workspaceFolderBasename}.exe",
+        "type": "cppvsdbg"
+      }
+    }
+  ],
+  "version": "0.2.0"
+}
