@@ -93,7 +93,7 @@ public:
         imageSize_ = cv::Size((int)w, (int)h);
 
         dictionary_ = cv::aruco::getPredefinedDictionary(dictType);
-        detectorParams_ = cv::aruco::DetectorParameters();
+        // Preserve previously set detectorParams_ (e.g. from setMinMaxMarkerDetectionSize)
         detector_ = cv::aruco::ArucoDetector(dictionary_, detectorParams_);
 
         loadCameraParameters(calibrationFile);
@@ -118,11 +118,12 @@ public:
     // Marker size in meters
     void setMarkerSize(float meters) { markerSize_ = meters; }
 
-    // Detection size range
+    // Detection size range (safe to call before or after setup)
     void setMinMaxMarkerDetectionSize(float minSize, float maxSize) {
         detectorParams_.minMarkerPerimeterRate = minSize;
         detectorParams_.maxMarkerPerimeterRate = maxSize;
         detector_ = cv::aruco::ArucoDetector(dictionary_, detectorParams_);
+        workerDetectorDirty_.store(true);
     }
 
     // =========================================================================
@@ -204,34 +205,14 @@ public:
     void detectMarkers(const unsigned char* data, int width, int height, int channels) {
         if (!threaded_) {
             DetectResult result;
-            findMarkers(data, width, height, channels, result);
+            findMarkers(detector_, data, width, height, channels, result);
             markerIds_ = std::move(result.markerIds);
             markerCorners_ = std::move(result.markerCorners);
             rvecs_ = std::move(result.rvecs);
             tvecs_ = std::move(result.tvecs);
         } else {
-            // Fetch previous result if available
-            if (hasResult_.load()) {
-                std::lock_guard<std::mutex> lock(resultMutex_);
-                markerIds_ = std::move(latestResult_.markerIds);
-                markerCorners_ = std::move(latestResult_.markerCorners);
-                rvecs_ = std::move(latestResult_.rvecs);
-                tvecs_ = std::move(latestResult_.tvecs);
-                hasResult_.store(false);
-            }
-
-            // Submit new request
-            {
-                std::lock_guard<std::mutex> lock(requestMutex_);
-                latestRequest_.width = width;
-                latestRequest_.height = height;
-                latestRequest_.channels = channels;
-                latestRequest_.detectBoards = false;
-                size_t bytes = (size_t)width * height * channels;
-                latestRequest_.pixelData.resize(bytes);
-                std::memcpy(latestRequest_.pixelData.data(), data, bytes);
-                hasRequest_.store(true);
-            }
+            fetchResult();
+            submitRequest(data, width, height, channels, false);
         }
     }
 
@@ -244,45 +225,16 @@ public:
     void detectBoards(const unsigned char* data, int width, int height, int channels) {
         if (!threaded_) {
             DetectResult result;
-            findMarkers(data, width, height, channels, result);
+            findMarkers(detector_, data, width, height, channels, result);
             estimateBoardPoses(result);
             markerIds_ = std::move(result.markerIds);
             markerCorners_ = std::move(result.markerCorners);
             rvecs_ = std::move(result.rvecs);
             tvecs_ = std::move(result.tvecs);
-            for (size_t i = 0; i < boards_.size() && i < result.boardResults.size(); i++) {
-                boards_[i].rvec = result.boardResults[i].rvec;
-                boards_[i].tvec = result.boardResults[i].tvec;
-                boards_[i].detected = result.boardResults[i].detected;
-                boards_[i].markersDetected = result.boardResults[i].markersDetected;
-            }
+            applyBoardResults(result);
         } else {
-            if (hasResult_.load()) {
-                std::lock_guard<std::mutex> lock(resultMutex_);
-                markerIds_ = std::move(latestResult_.markerIds);
-                markerCorners_ = std::move(latestResult_.markerCorners);
-                rvecs_ = std::move(latestResult_.rvecs);
-                tvecs_ = std::move(latestResult_.tvecs);
-                for (size_t i = 0; i < boards_.size() && i < latestResult_.boardResults.size(); i++) {
-                    boards_[i].rvec = latestResult_.boardResults[i].rvec;
-                    boards_[i].tvec = latestResult_.boardResults[i].tvec;
-                    boards_[i].detected = latestResult_.boardResults[i].detected;
-                    boards_[i].markersDetected = latestResult_.boardResults[i].markersDetected;
-                }
-                hasResult_.store(false);
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(requestMutex_);
-                latestRequest_.width = width;
-                latestRequest_.height = height;
-                latestRequest_.channels = channels;
-                latestRequest_.detectBoards = true;
-                size_t bytes = (size_t)width * height * channels;
-                latestRequest_.pixelData.resize(bytes);
-                std::memcpy(latestRequest_.pixelData.data(), data, bytes);
-                hasRequest_.store(true);
-            }
+            fetchResult();
+            submitRequest(data, width, height, channels, true);
         }
     }
 
@@ -376,6 +328,44 @@ private:
     };
 
     // =========================================================================
+    // Thread communication helpers (main thread only)
+    // =========================================================================
+
+    void fetchResult() {
+        if (!hasResult_.load()) return;
+
+        std::lock_guard<std::mutex> lock(resultMutex_);
+        markerIds_ = std::move(latestResult_.markerIds);
+        markerCorners_ = std::move(latestResult_.markerCorners);
+        rvecs_ = std::move(latestResult_.rvecs);
+        tvecs_ = std::move(latestResult_.tvecs);
+        applyBoardResults(latestResult_);
+        hasResult_.store(false);
+    }
+
+    void submitRequest(const unsigned char* data, int width, int height, int channels, bool boards) {
+        std::lock_guard<std::mutex> lock(requestMutex_);
+        latestRequest_.width = width;
+        latestRequest_.height = height;
+        latestRequest_.channels = channels;
+        latestRequest_.detectBoards = boards;
+        size_t bytes = (size_t)width * height * channels;
+        latestRequest_.pixelData.resize(bytes);
+        std::memcpy(latestRequest_.pixelData.data(), data, bytes);
+        hasRequest_.store(true);
+    }
+
+    void applyBoardResults(const DetectResult& result) {
+        std::lock_guard<std::mutex> lock(boardsMutex_);
+        for (size_t i = 0; i < boards_.size() && i < result.boardResults.size(); i++) {
+            boards_[i].rvec = result.boardResults[i].rvec;
+            boards_[i].tvec = result.boardResults[i].tvec;
+            boards_[i].detected = result.boardResults[i].detected;
+            boards_[i].markersDetected = result.boardResults[i].markersDetected;
+        }
+    }
+
+    // =========================================================================
     // Camera parameters
     // =========================================================================
 
@@ -398,7 +388,7 @@ private:
     }
 
     // =========================================================================
-    // Coordinate conversion: OpenCV → TrussC
+    // Coordinate conversion: OpenCV -> TrussC
     // =========================================================================
     // OpenCV: X-right, Y-down, Z-forward
     // TrussC/OpenGL: X-right, Y-up, Z-backward
@@ -441,11 +431,13 @@ private:
     }
 
     // =========================================================================
-    // Marker detection (called from main or worker thread)
+    // Marker detection
     // =========================================================================
 
-    void findMarkers(const unsigned char* data, int width, int height, int channels, DetectResult& result) {
-        // Convert to cv::Mat
+    void findMarkers(cv::aruco::ArucoDetector& det,
+                     const unsigned char* data, int width, int height, int channels,
+                     DetectResult& result) {
+        // Convert to grayscale
         cv::Mat image;
         if (channels == 4) {
             cv::Mat rgba(height, width, CV_8UC4, const_cast<unsigned char*>(data));
@@ -460,7 +452,7 @@ private:
         // Detect markers
         result.markerCorners.clear();
         result.markerIds.clear();
-        detector_.detectMarkers(image, result.markerCorners, result.markerIds);
+        det.detectMarkers(image, result.markerCorners, result.markerIds);
 
         // Pose estimation for individual markers
         result.rvecs.clear();
@@ -493,6 +485,7 @@ private:
     // =========================================================================
 
     void estimateBoardPoses(DetectResult& result) {
+        std::lock_guard<std::mutex> lock(boardsMutex_);
         result.boardResults.resize(boards_.size());
 
         for (size_t i = 0; i < boards_.size(); i++) {
@@ -568,21 +561,41 @@ private:
     // =========================================================================
 
     void workerFunction() {
+        // Disable OpenCV internal parallelism (GCD on macOS) in the worker
+        // thread to avoid heap corruption from nested thread pool conflicts.
+        cv::setNumThreads(1);
+
+        // Worker's own detector instance — avoids sharing detector_ with main thread
+        cv::aruco::ArucoDetector workerDetector(dictionary_, detectorParams_);
+
+        // Persistent request buffer — avoids per-frame 33MB alloc/free via swap
+        DetectRequest request;
+
         while (running_) {
             if (!hasRequest_.load()) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }
 
-            DetectRequest request;
+            // Rebuild worker detector if params changed (e.g. setMinMaxMarkerDetectionSize)
+            if (workerDetectorDirty_.exchange(false)) {
+                workerDetector = cv::aruco::ArucoDetector(dictionary_, detectorParams_);
+            }
+
             {
                 std::lock_guard<std::mutex> lock(requestMutex_);
-                request = std::move(latestRequest_);
+                // Swap pixel buffers — O(1), both vectors keep their capacity
+                request.pixelData.swap(latestRequest_.pixelData);
+                request.width = latestRequest_.width;
+                request.height = latestRequest_.height;
+                request.channels = latestRequest_.channels;
+                request.detectBoards = latestRequest_.detectBoards;
                 hasRequest_.store(false);
             }
 
             DetectResult result;
-            findMarkers(request.pixelData.data(), request.width, request.height, request.channels, result);
+            findMarkers(workerDetector, request.pixelData.data(),
+                        request.width, request.height, request.channels, result);
 
             if (request.detectBoards) {
                 estimateBoardPoses(result);
@@ -624,6 +637,7 @@ private:
 
     // Board management
     std::vector<BoardEntry> boards_;
+    std::mutex boardsMutex_;
 
     // Thread communication
     DetectRequest latestRequest_;
@@ -633,6 +647,9 @@ private:
     DetectResult latestResult_;
     std::mutex resultMutex_;
     std::atomic<bool> hasResult_{false};
+
+    // Worker detector rebuild flag
+    std::atomic<bool> workerDetectorDirty_{false};
 
     // Worker thread
     std::thread workerThread_;
