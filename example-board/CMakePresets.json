@@ -1,0 +1,27 @@
+{
+  "buildPresets": [
+    {
+      "configurePreset": "macos",
+      "jobs": 4,
+      "name": "macos"
+    }
+  ],
+  "configurePresets": [
+    {
+      "binaryDir": "${sourceDir}/build-macos",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      },
+      "displayName": "macOS",
+      "generator": "Unix Makefiles",
+      "name": "macos"
+    },
+    {
+      "binaryDir": "${sourceDir}/xcode",
+      "displayName": "Xcode",
+      "generator": "Xcode",
+      "name": "xcode"
+    }
+  ],
+  "version": 6
+}
