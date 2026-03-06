@@ -1,28 +1,19 @@
 #include "tcApp.h"
 
 void tcApp::setup() {
-    // List cameras and select device
-    auto devices = grabber.listDevices();
-    for (auto& d : devices) {
-        logNotice() << "Camera [" << d.deviceId << "]: " << d.deviceName;
-    }
-    grabber.setDeviceID(2);
-    grabber.setup(3840, 2160);
+    grabber.setup(640, 480);
 
     aruco.setThreaded(true);
-    aruco.setup("calibration.yml", 3840, 2160);
+    aruco.setup("calibration.yml", 640, 480);
     aruco.setMarkerSize(0.012f);
 
-    // Register boards: one per marker ID (0-49), simulating PartsTracker usage
-    float size = 0.012f;
-    for (int i = 0; i < 50; i++) {
-        vector<ArucoMarker> markers;
-        markers.push_back(ArucoMarker(i, Vec3(0, 0, 0), size));
-        BoardHandle h = aruco.addCustomBoard(markers);
-        boardHandles.push_back(h);
-    }
+    // Register a single board with all 50 markers in a 10x5 grid
+    float markerLen = 0.012f;
+    float markerSep = 0.003f;
+    BoardHandle h = aruco.addGridBoard(10, 5, markerLen, markerSep);
+    boardHandles.push_back(h);
 
-    logNotice() << "Registered " << boardHandles.size() << " boards";
+    logNotice() << "Registered 1 board (10x5 grid, 50 markers)";
 }
 
 void tcApp::update() {
@@ -42,9 +33,19 @@ void tcApp::draw() {
     // Draw camera image
     grabber.draw(0, 0, getWindowWidth(), getWindowHeight());
 
+    // AR overlay: draw 3D boxes on markers (white) and boards (red)
+    aruco.beginAR();
+    for (int i = 0; i < aruco.getNumMarkers(); i++) {
+        aruco.drawMarkerOverlay(i);
+    }
+    for (auto h : boardHandles) {
+        aruco.drawBoardOverlay(h);
+    }
+    aruco.endAR();
+
     // Overlay
     setColor(1);
-    drawBitmapString("tcxAruco - Board Detection (4K, threaded)", 20, 20);
+    drawBitmapString("tcxAruco - Board Detection (threaded)", 20, 20);
     drawBitmapString("Markers detected: " + to_string(numDetected), 20, 40);
 
     if (numDetected > 0) {
@@ -57,19 +58,11 @@ void tcApp::draw() {
         drawBitmapString(idStr, 20, 60);
 
         // Show board detection status
-        int boardsDetected = 0;
-        string boardInfo;
-        for (auto h : boardHandles) {
-            int m = aruco.getBoardMarkersDetected(h);
-            if (m > 0) {
-                boardInfo += to_string(h) + "(" + to_string(m) + ") ";
-            }
-            if (aruco.isBoardDetected(h)) boardsDetected++;
-        }
-        drawBitmapString("Boards detected: " + to_string(boardsDetected), 20, 80);
-        if (!boardInfo.empty()) {
-            drawBitmapString("Board markers: " + boardInfo, 20, 100);
-        }
+        BoardHandle bh = boardHandles[0];
+        int boardMarkers = aruco.getBoardMarkersDetected(bh);
+        bool boardOk = aruco.isBoardDetected(bh);
+        drawBitmapString("Board: " + string(boardOk ? "DETECTED" : "not detected") +
+                         " (" + to_string(boardMarkers) + "/50 markers)", 20, 80);
     }
 
     drawBitmapString("Threaded: " + string(aruco.isThreaded() ? "ON" : "OFF"), 20, getWindowHeight() - 20);

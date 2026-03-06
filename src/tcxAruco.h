@@ -117,6 +117,7 @@ public:
 
     // Marker size in meters
     void setMarkerSize(float meters) { markerSize_ = meters; }
+    float getMarkerSize() const { return markerSize_; }
 
     // Detection size range (safe to call before or after setup)
     void setMinMaxMarkerDetectionSize(float minSize, float maxSize) {
@@ -291,7 +292,132 @@ public:
         return cvToTcMatrix(boards_[handle].rvec, boards_[handle].tvec);
     }
 
+    // =========================================================================
+    // AR overlay drawing
+    // =========================================================================
+
+    // Begin AR drawing mode (sets projection matrix from calibration)
+    void beginAR() const {
+        // Save current projection and modelview
+        sgl_matrix_mode_projection();
+        sgl_push_matrix();
+        tc::Mat4 proj = projMatrix_.transposed();
+        sgl_load_matrix(proj.m);
+        sgl_matrix_mode_modelview();
+        sgl_push_matrix();
+    }
+
+    // End AR drawing mode (restores previous matrices)
+    void endAR() const {
+        // Restore modelview
+        sgl_pop_matrix();
+        // Restore projection
+        sgl_matrix_mode_projection();
+        sgl_pop_matrix();
+        sgl_matrix_mode_modelview();
+        // Sync RenderContext with restored sgl state
+        tc::getDefaultContext().resetMatrix();
+    }
+
+    // Draw marker overlay: white wireframe box sitting on marker + XYZ gizmo
+    void drawMarkerOverlay(int markerIndex, float gizmoScale = 0.5f) const {
+        if (markerIndex < 0 || markerIndex >= (int)rvecs_.size()) return;
+        tc::Mat4 mv = cvToTcMatrix(rvecs_[markerIndex], tvecs_[markerIndex]);
+        drawPoseBox(mv, markerSize_, tc::Color(1, 1, 1, 0.8f), gizmoScale);
+    }
+
+    // Draw board overlay: red wireframe box + XYZ gizmo, centered on board
+    void drawBoardOverlay(BoardHandle handle, float sizeScale = 3.0f, float gizmoScale = 0.5f) const {
+        if (handle < 0 || handle >= (int)boards_.size() || !boards_[handle].detected) return;
+        tc::Mat4 mv = cvToTcMatrix(boards_[handle].rvec, boards_[handle].tvec);
+        float size = estimateBoardSize(handle) * sizeScale;
+        tc::Vec3 center = computeBoardCenter(handle);
+        drawPoseBox(mv, size, tc::Color(1, 0.3f, 0.2f, 0.8f), gizmoScale, center);
+    }
+
+    // Draw all detected markers
+    void drawAllMarkerOverlays(float gizmoScale = 0.5f) const {
+        beginAR();
+        for (int i = 0; i < getNumMarkers(); i++) {
+            drawMarkerOverlay(i, gizmoScale);
+        }
+        endAR();
+    }
+
+    // Draw all detected boards
+    void drawAllBoardOverlays(const std::vector<BoardHandle>& handles, float gizmoScale = 0.5f) const {
+        beginAR();
+        for (auto h : handles) {
+            drawBoardOverlay(h, gizmoScale);
+        }
+        endAR();
+    }
+
 private:
+    // =========================================================================
+    // AR drawing helpers
+    // =========================================================================
+
+    void drawPoseBox(const tc::Mat4& mv, float size, const tc::Color& color,
+                     float gizmoScale, tc::Vec3 offset = tc::Vec3(0, 0, 0)) const {
+        // Use RenderContext::loadMatrix to keep sgl and RenderContext in sync
+        tc::getDefaultContext().loadMatrix(mv);
+
+        float half = size / 2.0f;
+
+        // Wireframe box sitting on the marker face
+        // After cvToTcMatrix: XY = marker face, Z = toward camera
+        // Offset is in OpenCV board coords, flip Y/Z for TrussC
+        tc::noFill();
+        tc::setColor(color);
+        tc::pushMatrix();
+        tc::translate(offset.x, -offset.y, -offset.z);
+        tc::translate(0, 0, half);  // Raise box along Z (toward camera)
+        tc::drawBox(size, size, size);
+        tc::popMatrix();
+
+        // XYZ gizmo at offset position
+        tc::pushMatrix();
+        tc::translate(offset.x, -offset.y, -offset.z);
+        float len = size * gizmoScale;
+        tc::setColor(1, 0, 0);  // X = red
+        tc::drawLine(0, 0, 0, len, 0, 0);
+        tc::setColor(0, 1, 0);  // Y = green
+        tc::drawLine(0, 0, 0, 0, len, 0);
+        tc::setColor(0, 0, 1);  // Z = blue
+        tc::drawLine(0, 0, 0, 0, 0, len);
+        tc::popMatrix();
+    }
+
+    float estimateBoardSize(BoardHandle handle) const {
+        auto& entry = boards_[handle];
+        auto objPoints = entry.board.getObjPoints();
+        if (objPoints.empty() || objPoints[0].size() < 4) return markerSize_;
+        auto& pts = objPoints[0];
+        float dx = pts[1].x - pts[0].x;
+        float dy = pts[1].y - pts[0].y;
+        return std::sqrt(dx * dx + dy * dy);
+    }
+
+    // Compute board center in board's local coordinate system (OpenCV coords)
+    tc::Vec3 computeBoardCenter(BoardHandle handle) const {
+        auto& entry = boards_[handle];
+        auto objPoints = entry.board.getObjPoints();
+        if (objPoints.empty()) return tc::Vec3(0, 0, 0);
+
+        float minX = 1e9f, maxX = -1e9f;
+        float minY = 1e9f, maxY = -1e9f;
+        for (auto& corners : objPoints) {
+            for (auto& p : corners) {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            }
+        }
+        return tc::Vec3((minX + maxX) / 2.0f, (minY + maxY) / 2.0f, 0);
+    }
+
     // =========================================================================
     // Internal types
     // =========================================================================

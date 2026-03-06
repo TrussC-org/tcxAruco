@@ -23,6 +23,9 @@ void tcApp::draw() {
     // Draw camera image
     grabber.draw(0, 0, getWindowWidth(), getWindowHeight());
 
+    // AR overlay: draw 3D boxes on detected markers
+    aruco.drawAllMarkerOverlays();
+
     // Draw marker info overlay
     setColor(1);
     drawBitmapString("tcxAruco - Marker Detection", 20, 20);
