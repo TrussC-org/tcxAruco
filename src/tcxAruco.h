@@ -73,7 +73,11 @@ constexpr BoardHandle INVALID_BOARD_HANDLE = -1;
 
 class ArucoDetector {
 public:
-    ArucoDetector() : markerSize_(0.15f) {}
+    ArucoDetector() : markerSize_(0.15f) {
+        detectorParams_.cornerRefinementMethod = cv::aruco::CORNER_REFINE_SUBPIX;
+        detectorParams_.cornerRefinementWinSize = 2;
+        detectorParams_.cornerRefinementMaxIterations = 50;
+    }
 
     ~ArucoDetector() {
         if (threaded_ && running_) {
@@ -123,6 +127,14 @@ public:
     void setMinMaxMarkerDetectionSize(float minSize, float maxSize) {
         detectorParams_.minMarkerPerimeterRate = minSize;
         detectorParams_.maxMarkerPerimeterRate = maxSize;
+        detector_ = cv::aruco::ArucoDetector(dictionary_, detectorParams_);
+        workerDetectorDirty_.store(true);
+    }
+
+    // Corner refinement method (default: CORNER_REFINE_SUBPIX)
+    // Use CORNER_REFINE_NONE for maximum speed
+    void setCornerRefinementMethod(cv::aruco::CornerRefineMethod method) {
+        detectorParams_.cornerRefinementMethod = method;
         detector_ = cv::aruco::ArucoDetector(dictionary_, detectorParams_);
         workerDetectorDirty_.store(true);
     }
@@ -264,6 +276,8 @@ public:
         if (handle < 0 || handle >= (int)boards_.size()) return 0;
         return boards_[handle].markersDetected;
     }
+
+    int getBoardCount() const { return (int)boards_.size(); }
 
     int getBoardMarkerCount(BoardHandle handle) const {
         if (handle < 0 || handle >= (int)boards_.size()) return 0;
