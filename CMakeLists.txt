@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
 add_library(tcxAruco INTERFACE)
 target_include_directories(tcxAruco INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(tcxAruco INTERFACE TrussC tcxOpenCv)
+target_link_libraries(tcxAruco INTERFACE TrussC tcxOpenCV)
 add_library(tc::tcxAruco ALIAS tcxAruco)

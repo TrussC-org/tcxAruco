@@ -15,14 +15,14 @@ Port of [ofxArucoCV4](https://github.com/tettou771/ofxArucoCV4) for TrussC, usin
 
 ## Dependencies
 
-- **tcxOpenCv** (included in TrussC addons, fetches OpenCV 4.10 via FetchContent)
+- **tcxOpenCV** (included in TrussC addons, fetches OpenCV 4.10 via FetchContent)
 
 ## Setup
 
-1. Add `tcxAruco` and `tcxOpenCv` to your project's `addons.make`:
+1. Add `tcxAruco` and `tcxOpenCV` to your project's `addons.make`:
    ```
    tcxAruco
-   tcxOpenCv
+   tcxOpenCV
    ```
 
 2. Run projectGenerator to update your project.
