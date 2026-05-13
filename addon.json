@@ -1,0 +1,12 @@
+{
+  "name": "tcxAruco",
+  "description": "ArUco marker detection (OpenCV-based)",
+  "author": "tettou771",
+  "license": "MIT",
+  "keywords": [
+    "aruco",
+    "marker",
+    "tracking",
+    "ar"
+  ]
+}
