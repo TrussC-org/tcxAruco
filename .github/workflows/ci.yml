@@ -3,10 +3,10 @@ name: CI
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: ['**']   # every branch: a push never silently skips CI. Narrow to [main] if CI is too heavy for this addon.
     tags: ['v*']
   pull_request:
-    branches: [main]
+    branches: [main]   # mainly to cover fork PRs into main (your own branches already run via push)
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -14,9 +14,10 @@ concurrency:
 
 jobs:
   # Builds this addon + its example-*/ projects on macOS / Windows / Linux.
-  # Addon name and platforms (addon.json) are auto-detected. tcxAruco depends
-  # on tcxOpenCV (a separate, non-bundled repo), so it is cloned via
-  # extra_addons before the build.
+  # Addon name and platforms (addon.json) are auto-detected, so this file is
+  # copy-safe: rename the addon and CI keeps working with no edits here. Add a
+  # tests/ directory to opt into behavioral tests (see the README).
+  # tcxAruco depends on tcxOpenCV (separate, non-bundled repo) -> extra_addons.
   build:
     uses: TrussC-org/ci-actions/.github/workflows/build-addon.yml@v1
     with:
