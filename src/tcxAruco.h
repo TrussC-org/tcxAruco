@@ -34,7 +34,7 @@
 #include <opencv2/objdetect/aruco_dictionary.hpp>
 #include <opencv2/objdetect/aruco_board.hpp>
 
-namespace tcx {
+namespace tcx::aruco {
 
 // =============================================================================
 // ArucoMarker - Marker definition for custom boards
@@ -796,4 +796,24 @@ private:
     std::atomic<bool> running_{false};
 };
 
-} // namespace tcx
+} // namespace tcx::aruco
+
+// -----------------------------------------------------------------------------
+// Backward compatibility. The canonical namespace is now `tcx::aruco`. These
+// silent aliases keep older code compiling: flat `tcx::ArucoDetector` and legacy
+// `trussc::ArucoDetector`. DEPRECATED — removed in v1.0.0.
+// (No [[deprecated]] attribute: under the usual `using namespace tc;` it would
+//  warn on idiomatic unqualified use too. See tcxAruco README for migration.)
+// -----------------------------------------------------------------------------
+namespace tcx {
+    using aruco::ArucoMarker;           // deprecated: remove at v1.0.0
+    using aruco::ArucoDetector;         // deprecated: remove at v1.0.0
+    using aruco::BoardHandle;           // deprecated: remove at v1.0.0
+    using aruco::INVALID_BOARD_HANDLE;  // deprecated: remove at v1.0.0
+}
+namespace trussc {
+    using tcx::aruco::ArucoMarker;           // deprecated: remove at v1.0.0
+    using tcx::aruco::ArucoDetector;         // deprecated: remove at v1.0.0
+    using tcx::aruco::BoardHandle;           // deprecated: remove at v1.0.0
+    using tcx::aruco::INVALID_BOARD_HANDLE;  // deprecated: remove at v1.0.0
+}
